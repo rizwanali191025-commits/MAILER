@@ -1,0 +1,1 @@
+Hello {{first_name}}, exciting news from our team!

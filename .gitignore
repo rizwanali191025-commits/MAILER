@@ -1,0 +1,22 @@
+# credentials & tokens — never commit these
+config/credentials.json
+config/token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# temp pptx output
+*.pptx
+!templates/*.pptx
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,10 @@
+{
+  "sender_email": "you@gmail.com",
+  "sender_names": [
+    "Your Name",
+    "Your Brand",
+    "Your Team"
+  ],
+  "delay_seconds": 1.5,
+  "max_per_run": 0
+}
