@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bulk Gmail Mailer</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+  <h1>Bulk Gmail Mailer</h1>
+  <div class="status-pills">
+    <span class="pill {{ 'ok' if credentials_present else 'bad' }}">
+      credentials.json {{ '✓' if credentials_present else '✗ missing' }}
+    </span>
+    <span class="pill {{ 'ok' if token_present else 'warn' }}">
+      Gmail token {{ '✓' if token_present else '— not authenticated' }}
+    </span>
+  </div>
+</header>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash {{ category }}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+<form method="POST" action="{{ url_for('save') }}" id="main-form">
+
+<section>
+  <h2>1. Sender Settings</h2>
+  <label>Your Gmail address
+    <input type="email" name="sender_email" value="{{ config.sender_email }}" placeholder="you@gmail.com" required>
+  </label>
+  <label>Sender display names (comma-separated — rotates per email)
+    <input type="text" name="sender_names" value="{{ sender_names_str }}" placeholder="Alice from Acme, Bob from Acme, Acme Team">
+  </label>
+  <div class="row">
+    <label>Delay between sends (sec)
+      <input type="number" step="0.1" name="delay_seconds" value="{{ config.delay_seconds }}">
+    </label>
+    <label>Max emails per run (0 = unlimited)
+      <input type="number" name="max_per_run" value="{{ config.max_per_run }}">
+    </label>
+  </div>
+</section>
+
+<section>
+  <h2>2. Recipients (CSV)</h2>
+  <p class="hint">First row = column headers. Each column becomes a <code>{{ '{{tag}}' }}</code> you can use in the email.</p>
+  <textarea name="recipients_csv" rows="8" spellcheck="false">{{ recipients_csv }}</textarea>
+</section>
+
+<section>
+  <h2>3. Subject template</h2>
+  <input type="text" name="subject_tmpl" value="{{ subject_tmpl }}" placeholder="Hello {{ '{{first_name}}' }}, exciting news!">
+</section>
+
+<section>
+  <h2>4. Body template (HTML)</h2>
+  <p class="hint">
+    Use <code>{{ '{{column_name}}' }}</code> for any CSV column. Built-in tags:
+    <code>{{ '{{date}}' }}</code>, <code>{{ '{{time}}' }}</code>,
+    <code>{{ '{{index}}' }}</code>, <code>{{ '{{random_id}}' }}</code>.
+  </p>
+  <textarea name="body_tmpl" rows="14" spellcheck="false">{{ body_tmpl }}</textarea>
+</section>
+
+<div class="actions">
+  <button type="submit" class="primary">💾 Save</button>
+</div>
+</form>
+
+<section class="preview-section">
+  <h2>5. Preview</h2>
+  <div class="row">
+    <label>Recipient row #
+      <input type="number" id="preview-index" value="1" min="1">
+    </label>
+    <button type="button" id="preview-btn">👁 Preview</button>
+  </div>
+  <div id="preview-output" class="hidden">
+    <div><strong>Subject:</strong> <span id="preview-subject"></span></div>
+    <div><strong>To:</strong> <span id="preview-to"></span></div>
+    <iframe id="preview-frame" sandbox=""></iframe>
+  </div>
+</section>
+
+<section class="send-section">
+  <h2>6. Send</h2>
+  <div class="row">
+    <label class="checkbox">
+      <input type="checkbox" id="attach-pptx" checked>
+      Attach HTML rendered as PowerPoint (.pptx)
+    </label>
+  </div>
+  <div class="actions">
+    {% if not token_present %}
+      <form method="POST" action="{{ url_for('auth') }}" style="display:inline;">
+        <button type="submit" class="primary">🔑 Authenticate with Gmail</button>
+      </form>
+    {% endif %}
+    <button type="button" id="dry-run-btn">🧪 Dry Run</button>
+    <button type="button" id="send-btn" class="danger" {% if not token_present %}disabled{% endif %}>
+      🚀 Send for real
+    </button>
+  </div>
+  <div id="run-status" class="run-status">
+    Status: <span id="run-status-text">{{ last_run.status }}</span>
+  </div>
+  <div id="run-log" class="run-log"></div>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function formData(extra = {}) {
+  const fd = new FormData($("main-form"));
+  for (const [k, v] of Object.entries(extra)) fd.append(k, v);
+  return fd;
+}
+
+$("preview-btn").addEventListener("click", async () => {
+  const fd = formData({ index: $("preview-index").value });
+  const res = await fetch("{{ url_for('preview') }}", { method: "POST", body: fd });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  $("preview-output").classList.remove("hidden");
+  $("preview-subject").textContent = data.subject;
+  $("preview-to").textContent = data.recipient.email || "(no email column)";
+  const frame = $("preview-frame");
+  frame.srcdoc = data.body;
+});
+
+async function runSend(dryRun) {
+  const fd = new FormData();
+  fd.append("dry_run", dryRun ? "1" : "0");
+  fd.append("attach_pptx", $("attach-pptx").checked ? "1" : "0");
+  const res = await fetch("{{ url_for('send') }}", { method: "POST", body: fd });
+  const data = await res.json();
+  if (data.error) { alert(data.error); return; }
+  pollStatus();
+}
+
+$("dry-run-btn").addEventListener("click", () => runSend(true));
+$("send-btn").addEventListener("click", () => {
+  if (confirm("Send real emails now?")) runSend(false);
+});
+
+async function pollStatus() {
+  const res = await fetch("{{ url_for('status') }}");
+  const data = await res.json();
+  $("run-status-text").textContent = data.status;
+  if (data.results && data.results.length) {
+    $("run-log").innerHTML = data.results.map(r =>
+      `<div class="log-line ${r.status === 'sent' ? 'ok' : (r.status === 'dry_run' ? 'warn' : 'bad')}">
+        ${r.to}: ${r.status || r.error || ''}
+      </div>`
+    ).join("");
+  }
+  if (data.running) setTimeout(pollStatus, 1000);
+}
+</script>
+
+</body>
+</html>

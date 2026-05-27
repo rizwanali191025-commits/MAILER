@@ -8,6 +8,11 @@ Send personalised HTML emails in bulk via the Gmail API with:
 
 ---
 
+## Two ways to use it
+
+- **Web UI** (recommended) — `python app.py` then open http://localhost:5000 in your browser. Edit settings, templates, and recipients in the page, click buttons to preview and send.
+- **Command line** — see the `python main.py …` commands further down.
+
 ## Quick Start
 
 ### 1. Install dependencies
@@ -43,7 +48,14 @@ python main.py auth
 
 A browser window opens for Google OAuth. The token is saved to `config/token.json`.
 
-### 5. Preview before sending
+### 5a. Launch the web UI
+
+```bash
+python app.py
+```
+Open http://localhost:5000 — edit everything in the page, click **Preview**, **Dry Run**, then **Send**.
+
+### 5b. Or use the CLI — preview before sending
 
 ```bash
 # Preview how row 1 of recipients.csv will look after tag substitution
