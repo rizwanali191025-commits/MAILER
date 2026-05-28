@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Bulk Gmail Mailer — CLI entry point.
-
-Usage examples:
-  python main.py send
-  python main.py send --dry-run
-  python main.py send --no-pptx
-  python main.py preview --recipient data/recipients.csv --index 1
-  python main.py tags
-  python main.py auth
-"""
+"""Bulk Gmail Mailer — CLI entry point (also used by launcher.py for first-run setup)."""
 
 import json
 import sys
@@ -20,12 +11,11 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.syntax import Syntax
 
-console = Console()
+from src.paths import (
+    CONFIG_PATH, RECIPIENTS_PATH, SUBJECT_PATH, BODY_PATH, CREDS_SAMPLE_PATH
+)
 
-CONFIG_PATH = Path("config/settings.json")
-RECIPIENTS_PATH = Path("data/recipients.csv")
-SUBJECT_TEMPLATE_PATH = Path("templates/subject.txt")
-BODY_TEMPLATE_PATH = Path("templates/body.html")
+console = Console()
 
 
 def _load_config() -> dict:
@@ -46,7 +36,7 @@ def _load_template(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-# ── commands ────────────────────────────────────────────────────────────────
+# ── commands ──────────────────────────────────────────────────────────────────
 
 @click.group()
 def cli():
@@ -64,19 +54,19 @@ def auth():
 
 
 @cli.command()
-@click.option("--dry-run", is_flag=True, help="Print what would be sent without sending.")
-@click.option("--no-pptx", is_flag=True, help="Send HTML email only, no PPT attachment.")
+@click.option("--dry-run",    is_flag=True)
+@click.option("--no-pptx",   is_flag=True)
 @click.option("--recipients", default=str(RECIPIENTS_PATH), show_default=True)
-@click.option("--subject", default=str(SUBJECT_TEMPLATE_PATH), show_default=True)
-@click.option("--body", default=str(BODY_TEMPLATE_PATH), show_default=True)
+@click.option("--subject",    default=str(SUBJECT_PATH),    show_default=True)
+@click.option("--body",       default=str(BODY_PATH),       show_default=True)
 def send(dry_run, no_pptx, recipients, subject, body):
     """Send bulk emails to all recipients in the CSV."""
     from src.auth import get_gmail_service
     from src.mailer import send_bulk
 
-    config = _load_config()
+    config       = _load_config()
     subject_tmpl = _load_template(Path(subject))
-    body_tmpl = _load_template(Path(body))
+    body_tmpl    = _load_template(Path(body))
 
     if dry_run:
         console.print(Panel("[bold yellow]DRY RUN MODE — no emails will be sent[/bold yellow]"))
@@ -85,26 +75,23 @@ def send(dry_run, no_pptx, recipients, subject, body):
         service = get_gmail_service()
 
     send_bulk(
-        service=service,
-        config=config,
+        service=service, config=config,
         recipients_csv=recipients,
-        subject_template=subject_tmpl,
-        body_html_template=body_tmpl,
-        attach_as_pptx=not no_pptx,
-        dry_run=dry_run,
+        subject_template=subject_tmpl, body_html_template=body_tmpl,
+        attach_as_pptx=not no_pptx, dry_run=dry_run,
     )
 
 
 @cli.command()
 @click.option("--recipient", default=str(RECIPIENTS_PATH), show_default=True)
-@click.option("--index", default=1, show_default=True, help="Row number (1-based) to preview.")
+@click.option("--index", default=1, show_default=True)
 def preview(recipient, index):
-    """Render subject + body for a single recipient and display it."""
+    """Render subject + body for a single recipient."""
     import csv
     from src import template_engine
 
-    subject_tmpl = _load_template(SUBJECT_TEMPLATE_PATH)
-    body_tmpl = _load_template(BODY_TEMPLATE_PATH)
+    subject_tmpl = _load_template(SUBJECT_PATH)
+    body_tmpl    = _load_template(BODY_PATH)
 
     with open(recipient, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
@@ -114,26 +101,19 @@ def preview(recipient, index):
         sys.exit(1)
 
     row = rows[index - 1]
-    rendered_subject = template_engine.render(subject_tmpl, row, index=index)
-    rendered_body = template_engine.render(body_tmpl, row, index=index)
-
-    console.print(Panel(f"[bold]Subject:[/bold] {rendered_subject}", title="Preview"))
-    console.print(Syntax(rendered_body, "html", theme="monokai", line_numbers=False))
+    console.print(Panel(f"[bold]Subject:[/bold] {template_engine.render(subject_tmpl, row, index=index)}", title="Preview"))
+    console.print(Syntax(template_engine.render(body_tmpl, row, index=index), "html", theme="monokai"))
 
 
 @cli.command()
 def tags():
-    """List all {{tags}} found in the current subject and body templates."""
+    """List all {{tags}} found in the current templates."""
     from src import template_engine
 
-    subject_tmpl = _load_template(SUBJECT_TEMPLATE_PATH)
-    body_tmpl = _load_template(BODY_TEMPLATE_PATH)
-
-    subject_tags = template_engine.list_tags(subject_tmpl)
-    body_tags = template_engine.list_tags(body_tmpl)
-    all_tags = list(dict.fromkeys(subject_tags + body_tags))
-
-    builtin = {"date", "time", "index", "random_id"}
+    subject_tags = template_engine.list_tags(_load_template(SUBJECT_PATH))
+    body_tags    = template_engine.list_tags(_load_template(BODY_PATH))
+    all_tags     = list(dict.fromkeys(subject_tags + body_tags))
+    builtin      = {"date", "time", "index", "random_id"}
 
     table = Table(title="Template Tags", show_header=True, header_style="bold magenta")
     table.add_column("Tag", style="cyan")
@@ -141,59 +121,46 @@ def tags():
     table.add_column("Type")
 
     for tag in all_tags:
-        sources = []
-        if tag in subject_tags:
-            sources.append("subject")
-        if tag in body_tags:
-            sources.append("body")
+        sources = (["subject"] if tag in subject_tags else []) + (["body"] if tag in body_tags else [])
         kind = "[dim]built-in[/dim]" if tag in builtin else "[green]CSV column[/green]"
         table.add_row(f"{{{{{tag}}}}}", ", ".join(sources), kind)
 
     console.print(table)
-    if not all_tags:
-        console.print("[yellow]No tags found in templates.[/yellow]")
 
 
 @cli.command()
 def init():
     """Create starter config, templates, and sample CSV."""
     _create_starter_files()
-    console.print("[green]Starter files created.[/green] Edit them before running [bold]send[/bold].")
+    console.print("[green]Starter files created.[/green]")
 
 
 def _create_starter_files():
+    """Create default files if they don't already exist.  Safe to call repeatedly."""
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    Path("data").mkdir(exist_ok=True)
-    Path("templates").mkdir(exist_ok=True)
+    RECIPIENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SUBJECT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     if not CONFIG_PATH.exists():
         CONFIG_PATH.write_text(json.dumps({
             "sender_email": "you@gmail.com",
             "sender_names": ["Your Name", "Your Brand", "Your Team"],
             "delay_seconds": 1.5,
-            "max_per_run": 0
+            "max_per_run": 0,
         }, indent=2))
-        console.print(f"[cyan]Created[/cyan] {CONFIG_PATH}")
 
-    sample_csv = Path("data/recipients.csv")
-    if not sample_csv.exists():
-        sample_csv.write_text(
+    if not RECIPIENTS_PATH.exists():
+        RECIPIENTS_PATH.write_text(
             "email,first_name,last_name,company,position\n"
             "alice@example.com,Alice,Smith,Acme Corp,CEO\n"
             "bob@example.com,Bob,Jones,Beta Ltd,CTO\n"
         )
-        console.print(f"[cyan]Created[/cyan] {sample_csv}")
 
-    subject_file = Path("templates/subject.txt")
-    if not subject_file.exists():
-        subject_file.write_text(
-            "Hello {{first_name}}, exciting news from our team!"
-        )
-        console.print(f"[cyan]Created[/cyan] {subject_file}")
+    if not SUBJECT_PATH.exists():
+        SUBJECT_PATH.write_text("Hello {{first_name}}, exciting news from our team!")
 
-    body_file = Path("templates/body.html")
-    if not body_file.exists():
-        body_file.write_text("""\
+    if not BODY_PATH.exists():
+        BODY_PATH.write_text("""\
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -222,20 +189,17 @@ def _create_starter_files():
 </body>
 </html>
 """)
-        console.print(f"[cyan]Created[/cyan] {body_file}")
 
-    creds_sample = Path("config/credentials.sample.json")
-    if not creds_sample.exists():
-        creds_sample.write_text(json.dumps({
+    if not CREDS_SAMPLE_PATH.exists():
+        CREDS_SAMPLE_PATH.write_text(json.dumps({
             "installed": {
                 "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
                 "client_secret": "YOUR_CLIENT_SECRET",
                 "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob", "http://localhost"],
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token"
+                "token_uri": "https://oauth2.googleapis.com/token",
             }
         }, indent=2))
-        console.print(f"[cyan]Created[/cyan] {creds_sample}  ← rename to credentials.json after filling in")
 
 
 if __name__ == "__main__":

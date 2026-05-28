@@ -11,3 +11,4 @@ pandas==2.2.2
 rich==13.7.1
 click==8.1.7
 Flask==3.0.3
+pystray==0.19.5

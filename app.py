@@ -1,10 +1,4 @@
-"""Flask web UI for the bulk mailer.
-
-Run with:
-    python app.py
-
-Then open http://localhost:5000 in your browser.
-"""
+"""Flask web UI for the bulk mailer."""
 
 import csv
 import io
@@ -16,22 +10,22 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, f
 
 from src import template_engine, html_to_ppt
 from src.mailer import send_bulk
-
-CONFIG_PATH = Path("config/settings.json")
-RECIPIENTS_PATH = Path("data/recipients.csv")
-SUBJECT_PATH = Path("templates/subject.txt")
-BODY_PATH = Path("templates/body.html")
-CREDENTIALS_PATH = Path("config/credentials.json")
-TOKEN_PATH = Path("config/token.json")
-
-app = Flask(
-    __name__,
-    template_folder="web/templates",
-    static_folder="web/static",
+from src.paths import (
+    CONFIG_PATH, CREDENTIALS_PATH, TOKEN_PATH,
+    RECIPIENTS_PATH, SUBJECT_PATH, BODY_PATH,
+    WEB_TEMPLATES_DIR, WEB_STATIC_DIR,
 )
-app.secret_key = "change-this-in-production"
 
-# in-memory log of the last send run
+flask_app = Flask(
+    __name__,
+    template_folder=str(WEB_TEMPLATES_DIR),
+    static_folder=str(WEB_STATIC_DIR),
+)
+flask_app.secret_key = "bm-secret-2026"
+
+# keep a reference under the old name so `if __name__ == "__main__"` still works
+app = flask_app
+
 LAST_RUN: dict = {"status": "idle", "results": [], "running": False}
 
 
@@ -47,17 +41,12 @@ def _write(path: Path, text: str):
 def _load_config() -> dict:
     if CONFIG_PATH.exists():
         return json.loads(CONFIG_PATH.read_text())
-    return {
-        "sender_email": "",
-        "sender_names": [],
-        "delay_seconds": 1.5,
-        "max_per_run": 0,
-    }
+    return {"sender_email": "", "sender_names": [], "delay_seconds": 1.5, "max_per_run": 0}
 
 
-# ── routes ──────────────────────────────────────────────────────────────────
+# ── routes ────────────────────────────────────────────────────────────────────
 
-@app.route("/")
+@flask_app.route("/")
 def index():
     config = _load_config()
     return render_template(
@@ -73,9 +62,8 @@ def index():
     )
 
 
-@app.route("/save", methods=["POST"])
+@flask_app.route("/save", methods=["POST"])
 def save():
-    """Save all editable fields back to disk."""
     config = {
         "sender_email": request.form.get("sender_email", "").strip(),
         "sender_names": [
@@ -86,18 +74,15 @@ def save():
     }
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(config, indent=2))
-
     _write(RECIPIENTS_PATH, request.form.get("recipients_csv", ""))
     _write(SUBJECT_PATH, request.form.get("subject_tmpl", ""))
     _write(BODY_PATH, request.form.get("body_tmpl", ""))
-
     flash("Saved.", "success")
     return redirect(url_for("index"))
 
 
-@app.route("/preview", methods=["POST"])
+@flask_app.route("/preview", methods=["POST"])
 def preview():
-    """Render subject + body for one recipient row."""
     index = int(request.form.get("index", 1))
     subject_tmpl = request.form.get("subject_tmpl", "")
     body_tmpl = request.form.get("body_tmpl", "")
@@ -110,23 +95,19 @@ def preview():
         return jsonify({"error": f"Index {index} out of range (1–{len(rows)})."}), 400
 
     row = rows[index - 1]
-    subject = template_engine.render(subject_tmpl, row, index=index)
-    body = template_engine.render(body_tmpl, row, index=index)
-    tags_used = list(set(
-        template_engine.list_tags(subject_tmpl)
-        + template_engine.list_tags(body_tmpl)
-    ))
     return jsonify({
-        "subject": subject,
-        "body": body,
+        "subject": template_engine.render(subject_tmpl, row, index=index),
+        "body":    template_engine.render(body_tmpl,    row, index=index),
         "recipient": row,
-        "tags": tags_used,
+        "tags": list(set(
+            template_engine.list_tags(subject_tmpl) +
+            template_engine.list_tags(body_tmpl)
+        )),
     })
 
 
-@app.route("/auth", methods=["POST"])
+@flask_app.route("/auth", methods=["POST"])
 def auth():
-    """Trigger the Gmail OAuth2 flow (opens browser on the server machine)."""
     try:
         from src.auth import get_gmail_service
         service = get_gmail_service()
@@ -139,35 +120,27 @@ def auth():
     return redirect(url_for("index"))
 
 
-@app.route("/send", methods=["POST"])
+@flask_app.route("/send", methods=["POST"])
 def send():
-    """Kick off a send run (dry-run or real) in a background thread."""
     if LAST_RUN["running"]:
         return jsonify({"error": "A send is already running."}), 409
 
-    dry_run = request.form.get("dry_run") == "1"
+    dry_run     = request.form.get("dry_run") == "1"
     attach_pptx = request.form.get("attach_pptx") == "1"
-
-    config = _load_config()
-    subject_tmpl = _read(SUBJECT_PATH)
-    body_tmpl = _read(BODY_PATH)
+    config      = _load_config()
 
     if not config.get("sender_email"):
         return jsonify({"error": "sender_email is empty. Save your config first."}), 400
     if not config.get("sender_names"):
         return jsonify({"error": "sender_names is empty. Save your config first."}), 400
 
-    def worker():
-        LAST_RUN["running"] = True
-        LAST_RUN["status"] = "running"
-        LAST_RUN["results"] = []
-        try:
-            if dry_run:
-                service = None
-            else:
-                from src.auth import get_gmail_service
-                service = get_gmail_service()
+    subject_tmpl = _read(SUBJECT_PATH)
+    body_tmpl    = _read(BODY_PATH)
 
+    def worker():
+        LAST_RUN.update({"running": True, "status": "running", "results": []})
+        try:
+            service = None if dry_run else __import__("src.auth", fromlist=["get_gmail_service"]).get_gmail_service()
             results = send_bulk(
                 service=service,
                 config=config,
@@ -177,8 +150,7 @@ def send():
                 attach_as_pptx=attach_pptx,
                 dry_run=dry_run,
             )
-            LAST_RUN["results"] = results
-            LAST_RUN["status"] = "done"
+            LAST_RUN.update({"results": results, "status": "done"})
         except Exception as e:
             LAST_RUN["status"] = f"error: {e}"
         finally:
@@ -188,7 +160,7 @@ def send():
     return jsonify({"status": "started", "dry_run": dry_run})
 
 
-@app.route("/status")
+@flask_app.route("/status")
 def status():
     return jsonify(LAST_RUN)
 
