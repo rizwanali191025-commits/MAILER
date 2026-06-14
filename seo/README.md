@@ -12,6 +12,7 @@ credentials are provided.
 | `onpage_audit.py`      | Free on-page + robots/sitemap checks (stdlib only)   |
 | `dataforseo_client.py` | Thin DataForSEO API wrapper                          |
 | `audit.py`             | Orchestrator: on-page + DataForSEO into one report   |
+| `generate_pdf_report.py` | Renders a styled, client-ready PDF report          |
 | `.env.example`         | Credential template (copy to `.env`, never commit)   |
 
 ## Usage
@@ -33,6 +34,14 @@ Skip the API and run only the free checks:
 
 ```bash
 python3 seo/audit.py https://yourdomain.com --no-api
+```
+
+Generate a client-ready PDF report (requires `reportlab`):
+
+```bash
+pip install reportlab
+python3 seo/generate_pdf_report.py https://yourdomain.com
+# -> seo/reports/<domain>-audit.pdf
 ```
 
 ## Credentials
