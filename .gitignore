@@ -1,6 +1,8 @@
 # credentials & tokens — never commit these
 config/credentials.json
 config/token.json
+seo/.env
+.env
 
 # Python
 __pycache__/
