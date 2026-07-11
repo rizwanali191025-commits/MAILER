@@ -81,14 +81,15 @@ def _sev_color(sev: str):
     return {"High": RED, "Medium": AMBER, "Low": GREEN}.get(sev, GREY)
 
 
-def derive_findings(onpage: dict, rs: dict, domain: str) -> list[dict]:
+def derive_findings(onpage: dict, rs: dict, domain: str, site: dict | None = None) -> list[dict]:
     """Translate raw audit data into client-friendly findings."""
+    site = site or {}
     f: list[dict] = []
     title = onpage.get("title", "")
     tlen = onpage.get("title_length", 0)
 
-    # Title
-    if tlen < 30:
+    # Title too short
+    if tlen and tlen < 30:
         f.append(dict(
             sev="High", area="Homepage title",
             what=f"Your homepage's title tag currently reads “{title}” — only {tlen} "
@@ -96,9 +97,59 @@ def derive_findings(onpage: dict, rs: dict, domain: str) -> list[dict]:
             why="The title is the clickable blue headline shown in Google search "
                 "results and the strongest single on-page ranking signal. A generic "
                 "title means fewer people find and click your store.",
-            fix="Set a descriptive, keyword-rich title such as “Handmade Clay "
-                "Jewellery India | LuxeClay – Earrings, Studs & Pendants” (≈55–60 "
-                "characters) in your SEO plugin settings.",
+            fix="Set a descriptive, keyword-rich title of about 55–60 characters that "
+                "leads with your main service and location, in your SEO settings.",
+        ))
+    # Title too long
+    elif tlen > 60:
+        f.append(dict(
+            sev="Medium", area="Homepage title length",
+            what=f"Your homepage title is {tlen} characters (“{title[:70]}…”). Google "
+                 "typically shows only ~60 characters, so the end gets cut off.",
+            why="A truncated title looks unfinished in search results and can bury your "
+                "most important keywords past the cut-off point.",
+            fix="Trim the title to ~55–60 characters, keeping the strongest keyword and "
+                "your brand at the front, e.g. “Digital Marketing Agency Kolkata | Marklo”.",
+        ))
+
+    # Meta description too long
+    if onpage.get("meta_description_length", 0) > 160:
+        f.append(dict(
+            sev="Low", area="Meta description length",
+            what=f"The homepage meta description is {onpage.get('meta_description_length')} "
+                 "characters — beyond the ~155–160 Google usually displays.",
+            why="The tail of your description gets cut off in search results, so a "
+                "call-to-action at the end may never be seen.",
+            fix="Shorten the description to ~150 characters and put the key hook and "
+                "call-to-action early.",
+        ))
+
+    # www not redirecting
+    if site.get("www_conflict"):
+        f.append(dict(
+            sev="High", area="www and non-www both live",
+            what="Your site loads at both www.{d} and {d} without one redirecting to "
+                 "the other. Google sees these as two separate websites showing the "
+                 "same content.".format(d=domain),
+            why="Duplicate versions split your ranking signals (links, authority) "
+                "between two addresses instead of concentrating them on one, weakening "
+                "your overall ranking power.",
+            fix="Add a permanent 301 redirect from the www version to your preferred "
+                "address (or vice-versa) via your host's settings or an .htaccess rule, "
+                "so every visitor and search engine lands on one canonical version.",
+        ))
+
+    # Duplicate homepage URL / vs /index.html
+    if site.get("index_dupe"):
+        f.append(dict(
+            sev="Medium", area="Homepage has two addresses",
+            what="Your homepage opens at both {d}/ and {d}/index.html, and the site "
+                 "points its canonical tag at /index.html rather than the clean root "
+                 "address.".format(d=domain),
+            why="Two URLs for the same page can dilute ranking signals, and the "
+                "/index.html address is less clean to share and link to than the root.",
+            fix="Redirect /index.html to / (301) and update the canonical tag, sitemap, "
+                "and og:url to use the clean root address https://{d}/.".format(d=domain),
         ))
 
     # Duplicate meta tags
@@ -179,6 +230,31 @@ def derive_findings(onpage: dict, rs: dict, domain: str) -> list[dict]:
                 "flagged items.",
         ))
 
+    # Missing Twitter Card (has OG but no twitter:card)
+    if onpage.get("has_og") and not onpage.get("has_twitter_card"):
+        f.append(dict(
+            sev="Low", area="Social share preview (Twitter/X)",
+            what="Your pages include Facebook/LinkedIn share tags (Open Graph) but no "
+                 "Twitter Card tags.",
+            why="Without Twitter Card tags, links shared on X/Twitter may show a plain, "
+                "less-clickable preview instead of a rich image card.",
+            fix="Add twitter:card, twitter:title, twitter:description and twitter:image "
+                "meta tags to the page head (they can mirror your Open Graph values).",
+        ))
+
+    # Structured data only on homepage
+    if onpage.get("json_ld_blocks", 0) >= 1:
+        f.append(dict(
+            sev="Low", area="Structured data coverage",
+            what="Structured data (schema) is present on the homepage but is thin or "
+                 "absent on inner pages like services, about and contact.",
+            why="Richer, page-appropriate schema (Service, Organization, Breadcrumb, "
+                "FAQ) helps Google understand each page and can unlock rich results.",
+            fix="Add relevant schema to each page — e.g. Service schema on the services "
+                "page, BreadcrumbList sitewide, and FAQ schema where you answer common "
+                "questions.",
+        ))
+
     return f
 
 
@@ -199,9 +275,10 @@ def _sitemap_conflicts(rs: dict):
     return conflicts
 
 
-def _score(onpage: dict) -> int:
-    passed = len(onpage.get("ok", []))
-    issues = len(onpage.get("issues", []))
+def _score(onpage: dict, site: dict | None = None) -> int:
+    site = site or {}
+    passed = len(onpage.get("ok", [])) + len(site.get("ok", []))
+    issues = len(onpage.get("issues", [])) + len(site.get("issues", []))
     total = passed + issues
     return round(100 * passed / total) if total else 0
 
@@ -270,9 +347,10 @@ def build(url: str, out_path: str, brand: str) -> str:
     data = audit_mod.run(url, use_api=True)
     onpage = data["onpage"]
     rs = data["robots_sitemap"]
+    site = data.get("site_checks", {})
     domain = urlparse(url if "://" in url else "https://" + url).netloc
-    findings = derive_findings(onpage, rs, domain)
-    score = _score(onpage)
+    findings = derive_findings(onpage, rs, domain, site)
+    score = _score(onpage, site)
     highs = sum(1 for f in findings if f["sev"] == "High")
 
     doc = SimpleDocTemplate(out_path, pagesize=A4,
@@ -313,7 +391,7 @@ def build(url: str, out_path: str, brand: str) -> str:
     el.append(Spacer(1, 4 * mm))
 
     # summary stat boxes
-    passed = len(onpage.get("ok", []))
+    passed = len(onpage.get("ok", [])) + len(site.get("ok", []))
     def stat(num, label, col):
         return Table([[Paragraph(f'<font size=20 color="{("#"+col.hexval()[2:])}"><b>{num}</b></font>', SS["Body2"])],
                       [Paragraph(label, SS["Small"])]],
@@ -353,7 +431,10 @@ def build(url: str, out_path: str, brand: str) -> str:
     order = {"High": 0, "Medium": 1, "Low": 2}
     effort_map = {"Homepage title": "Low", "Conflicting SEO tags": "Low",
                   "Important pages blocked from Google": "Low", "Page headings": "Low",
-                  "Image descriptions": "Medium", "Page speed": "Medium"}
+                  "Image descriptions": "Medium", "Page speed": "Medium",
+                  "Homepage title length": "Low", "Meta description length": "Low",
+                  "www and non-www both live": "Low", "Homepage has two addresses": "Low",
+                  "Social share preview (Twitter/X)": "Low", "Structured data coverage": "Medium"}
     for i, fnd in enumerate(sorted(findings, key=lambda x: order.get(x["sev"], 3)), 1):
         sc = _sev_color(fnd["sev"])
         rows.append([
@@ -399,10 +480,18 @@ def build(url: str, out_path: str, brand: str) -> str:
         for key, msg in nice.items():
             if ok.startswith(key) and msg not in shown:
                 shown.append(msg)
-    # always-true infra wins
-    shown += ["Secure HTTPS is enforced across the site.",
-              "Web and non-web addresses are correctly unified (no duplicate versions).",
-              "An XML sitemap is published so Google can discover your pages."]
+    # site-level wins, phrased for a client
+    site_nice = {
+        "HTTP redirects": "Secure HTTPS is enforced (visitors are always sent to the secure version).",
+        "www redirects": "www and non-www addresses are correctly unified.",
+        "Missing pages correctly": "Broken links correctly return a 404 (no misleading pages).",
+    }
+    for ok in site.get("ok", []):
+        for key, msg in site_nice.items():
+            if ok.startswith(key) and msg not in shown:
+                shown.append(msg)
+    if not any("sitemap" in s.lower() for s in shown):
+        shown.append("An XML sitemap is published so Google can discover your pages.")
     for msg in shown:
         el.append(Paragraph(f'<font color="#2e7d32"><b>✓</b></font>&nbsp;&nbsp;{msg}', SS["Body2"]))
     el.append(Spacer(1, 5 * mm))

@@ -82,6 +82,10 @@ def audit_page(url: str) -> dict:
         report["issues"].append(
             f"Duplicate og:title tags ({len(og_titles)}×) — two plugins/theme emitting social tags."
         )
+    report["has_og"] = len(og_titles) >= 1
+    report["has_twitter_card"] = bool(_find_all(r'name=["\']twitter:card["\']', html))
+    og_url = _find_all(r'property=["\']og:url["\']\s+content=["\'](.*?)["\']', html)
+    report["og_url"] = og_url[0] if og_url else ""
 
     # Canonical
     canon = _find_all(r'<link\s+rel=["\']canonical["\']\s+href=["\'](.*?)["\']', html)
@@ -164,6 +168,69 @@ def audit_robots_and_sitemap(base_url: str) -> dict:
             cs, cbody = _fetch(child)
             count = len(re.findall(r"<loc>", cbody))
             out.setdefault("sitemap_counts", {})[child] = count
+
+    return out
+
+
+def _status(url: str) -> tuple[int, str]:
+    """Return (status_code, final_url) without following redirects."""
+    req = urllib.request.Request(url, headers={"User-Agent": UA}, method="HEAD")
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(req, timeout=20) as resp:
+            return resp.status, resp.headers.get("Location", "")
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers.get("Location", "") if e.headers else ""
+    except Exception:
+        return 0, ""
+
+
+def site_checks(base_url: str) -> dict:
+    """Domain-level technical checks: HTTPS, www canonicalisation, duplicate
+    homepage URL, and 404 handling."""
+    parsed = urlparse(base_url if "://" in base_url else "https://" + base_url)
+    host = parsed.netloc
+    bare = host[4:] if host.startswith("www.") else host
+    out: dict = {"issues": [], "ok": []}
+
+    # HTTP -> HTTPS
+    code, loc = _status(f"http://{bare}/")
+    if code in (301, 308) and loc.startswith("https"):
+        out["ok"].append("HTTP redirects to HTTPS (301).")
+    else:
+        out["issues"].append("HTTP does not 301-redirect to HTTPS.")
+
+    # www canonicalisation
+    www_code, www_loc = _status(f"https://www.{bare}/")
+    nonwww_code, _ = _status(f"https://{bare}/")
+    if www_code in (301, 308):
+        out["ok"].append("www redirects to the canonical host.")
+    elif www_code == 200 and nonwww_code == 200:
+        out["www_conflict"] = True
+        out["issues"].append(
+            "Both www and non-www serve the site (200) with no redirect — duplicate content."
+        )
+
+    # Duplicate homepage URL: / vs /index.html
+    root_code, _ = _status(f"https://{bare}/")
+    idx_code, _ = _status(f"https://{bare}/index.html")
+    if root_code == 200 and idx_code == 200:
+        out["index_dupe"] = True
+        out["issues"].append(
+            "Homepage is reachable at both / and /index.html (200) — duplicate URL."
+        )
+
+    # 404 handling
+    nf_code, _ = _status(f"https://{bare}/this-page-does-not-exist-{hash(bare) % 9999}")
+    if nf_code == 404:
+        out["ok"].append("Missing pages correctly return 404.")
+    elif nf_code == 200:
+        out["issues"].append("Missing pages return 200 (soft 404) instead of 404.")
 
     return out
 

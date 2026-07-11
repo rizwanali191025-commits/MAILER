@@ -27,6 +27,7 @@ def run(url: str, use_api: bool = True) -> dict:
     # 1. Free on-page + technical checks
     result["onpage"] = onpage_audit.audit_page(url)
     result["robots_sitemap"] = onpage_audit.audit_robots_and_sitemap(url)
+    result["site_checks"] = onpage_audit.site_checks(url)
 
     if not use_api:
         return result
