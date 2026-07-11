@@ -242,8 +242,22 @@ def derive_findings(onpage: dict, rs: dict, domain: str, site: dict | None = Non
                 "meta tags to the page head (they can mirror your Open Graph values).",
         ))
 
-    # Structured data only on homepage
-    if onpage.get("json_ld_blocks", 0) >= 1:
+    # Structured data only on homepage (check a sample of inner pages from the sitemap)
+    inner_urls = [u for child in rs.get("sitemap_children", {}).values() for u in child
+                  if not u.rstrip("/").endswith(("index.html", domain, domain + "/"))][:5]
+    inner_missing_schema = False
+    if inner_urls:
+        import urllib.request as _ur
+        for u in inner_urls:
+            try:
+                req = _ur.Request(u, headers={"User-Agent": "audit"})
+                body = _ur.urlopen(req, timeout=15).read().decode(errors="replace")
+                if "application/ld+json" not in body:
+                    inner_missing_schema = True
+                    break
+            except Exception:
+                pass
+    if onpage.get("json_ld_blocks", 0) >= 1 and inner_missing_schema:
         f.append(dict(
             sev="Low", area="Structured data coverage",
             what="Structured data (schema) is present on the homepage but is thin or "
