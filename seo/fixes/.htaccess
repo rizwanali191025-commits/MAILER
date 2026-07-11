@@ -1,0 +1,13 @@
+# --- SEO fixes: www + /index.html canonicalisation ---
+# Merge these rules into your existing .htaccess (keep this near the top,
+# before any other RewriteRule / caching rules).
+
+RewriteEngine On
+
+# 1. Force non-www (redirects www.azimkhan.in -> azimkhan.in)
+RewriteCond %{HTTP_HOST} ^www\.azimkhan\.in [NC]
+RewriteRule ^(.*)$ https://azimkhan.in/$1 [L,R=301]
+
+# 2. Redirect /index.html -> / (removes the duplicate homepage URL)
+RewriteCond %{THE_REQUEST} \s/+index\.html[\s?] [NC]
+RewriteRule ^index\.html$ https://azimkhan.in/ [L,R=301]
