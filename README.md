@@ -163,3 +163,22 @@ MAILER/
     ├── template_engine.py   # {{tag}} renderer
     └── sender_rotator.py    # round-robin sender names
 ```
+
+---
+
+## Running the tests
+
+The test suite covers the template engine, sender rotation, HTML→PPTX
+conversion, the bulk-send dry-run path, and the web routes — none of it
+touches Gmail, so no credentials are required.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE).

@@ -17,13 +17,16 @@ class SenderRotator:
             raise ValueError("At least one sender name is required.")
         self._cycle = cycle(names)
         self._names = names
-        self._index = 0
+        self._index = -1  # no name emitted yet
 
     def next(self) -> str:
         self._index = (self._index + 1) % len(self._names)
         return next(self._cycle)
 
     def current(self) -> str:
+        """Return the name most recently produced by :meth:`next`."""
+        if self._index < 0:
+            return self._names[0]
         return self._names[self._index]
 
     @classmethod
