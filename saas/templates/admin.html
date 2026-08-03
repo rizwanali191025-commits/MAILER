@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Admin — Sending account{% endblock %}
+{% block content %}
+<section class="wrap dash">
+  <h1>Operator settings</h1>
+  <p class="muted">This is your control panel. The Gmail account you connect here
+    is what <strong>every customer's real emails send through</strong>.</p>
+
+  <div class="panel">
+    <h2>Sending account (Gmail)</h2>
+
+    {% if cfg['smtp_email'] %}
+      <div class="conn-status connected">
+        <span class="dot"></span>
+        Connected as <strong>{{ cfg['smtp_email'] }}</strong>
+      </div>
+    {% else %}
+      <div class="conn-status disconnected">
+        <span class="dot"></span> Not connected — real sends will simulate.
+      </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('admin_sending') }}" class="stack" style="margin-top:16px">
+      <label>Gmail address
+        <input type="email" name="smtp_email" value="{{ cfg['smtp_email'] }}"
+               placeholder="youraccount@gmail.com" required>
+      </label>
+      <label>Gmail App Password
+        <input type="text" name="smtp_password" autocomplete="off"
+               placeholder="16-character app password (e.g. abcd efgh ijkl mnop)" required>
+        <small class="muted">Not your normal Gmail password — a special 16-character
+          App Password. Steps below. Spaces are fine.</small>
+      </label>
+      <div class="editor-save">
+        <button class="btn btn-primary">Save sending account</button>
+        {% if cfg['smtp_email'] %}
+          <button type="button" class="btn btn-ghost" onclick="testSend()">Send test email</button>
+          <form method="post" action="{{ url_for('admin_sending_disconnect') }}" style="display:inline"
+                onsubmit="return confirm('Disconnect the sending account?')">
+            <button class="btn btn-danger">Disconnect</button>
+          </form>
+        {% endif %}
+      </div>
+      <div id="test-result" class="send-result" hidden></div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>How to get a Gmail App Password (2 minutes)</h2>
+    <ol class="steps">
+      <li>Go to <a href="https://myaccount.google.com/security" target="_blank" rel="noopener">myaccount.google.com/security</a>.</li>
+      <li>Turn on <strong>2-Step Verification</strong> if it isn't already (App Passwords require it).</li>
+      <li>Open <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">App passwords</a>,
+          type a name like <em>MailPilot</em>, and click <strong>Create</strong>.</li>
+      <li>Google shows a <strong>16-character password</strong> — copy it.</li>
+      <li>Paste it into the <strong>Gmail App Password</strong> box above with the matching
+          Gmail address, click <strong>Save</strong>, then <strong>Send test email</strong>.</li>
+    </ol>
+    <p class="micro muted">Gmail sends roughly 500 emails/day on a free account
+      (about 2,000/day on Google Workspace). Plan quotas keep customers within that.</p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function testSend() {
+  const box = document.getElementById('test-result');
+  box.hidden = false; box.className = 'send-result busy'; box.textContent = 'Sending test email…';
+  try {
+    const res = await fetch("{{ url_for('admin_sending_test') }}", { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      box.className = 'send-result error';
+      box.textContent = data.error || 'Test failed.';
+    } else {
+      box.className = 'send-result ok';
+      box.innerHTML = '<strong>Test sent!</strong> Check the inbox of ' + data.to + '.';
+    }
+  } catch (e) { box.className = 'send-result error'; box.textContent = 'Request failed: ' + e; }
+}
+</script>
+{% endblock %}

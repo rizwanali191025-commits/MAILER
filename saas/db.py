@@ -51,6 +51,16 @@ CREATE TABLE IF NOT EXISTS send_events (
 
 CREATE INDEX IF NOT EXISTS idx_campaigns_user ON campaigns(user_id);
 CREATE INDEX IF NOT EXISTS idx_send_events_user ON send_events(user_id, created_at);
+
+-- Single shared sending account for the whole app (operator-configured).
+-- One row (id = 1). All customers' real emails go out through this Gmail.
+CREATE TABLE IF NOT EXISTS app_config (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    smtp_email    TEXT NOT NULL DEFAULT '',   -- the Gmail address that sends
+    smtp_password TEXT NOT NULL DEFAULT '',    -- Gmail App Password (16 chars)
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT OR IGNORE INTO app_config (id) VALUES (1);
 """
 
 

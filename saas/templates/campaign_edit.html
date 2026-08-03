@@ -120,7 +120,8 @@ async function doSend(dry) {
     box.className = 'send-result ok';
     box.innerHTML = `<strong>${dry ? 'Dry-run complete' : 'Send complete'}</strong><br>` +
       `${data.sent} sent · ${data.dry_run} simulated · ${data.errors} errors · ` +
-      `${data.remaining} left this month`;
+      `${data.remaining} left this month` +
+      (data.note ? `<br><span class="note">${data.note}</span>` : '');
   } catch (e) {
     box.className = 'send-result error';
     box.textContent = 'Request failed: ' + e;

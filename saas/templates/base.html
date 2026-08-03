@@ -16,6 +16,7 @@
       {% if current_user %}
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
         <a href="{{ url_for('billing') }}">Billing</a>
+        {% if is_admin %}<a href="{{ url_for('admin') }}">Admin</a>{% endif %}
         <span class="plan-chip plan-{{ user_plan.id }}">{{ user_plan.name }}</span>
         <a class="btn btn-ghost" href="{{ url_for('logout') }}">Log out</a>
       {% else %}
@@ -25,6 +26,15 @@
     </nav>
   </div>
 </header>
+
+{% if current_user and is_admin and not sending_configured %}
+  <div class="wrap flashes">
+    <div class="flash flash-error">
+      📮 No sending account connected yet — real sends will only simulate.
+      <a href="{{ url_for('admin') }}">Connect your Gmail →</a>
+    </div>
+  </div>
+{% endif %}
 
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}

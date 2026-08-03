@@ -185,3 +185,25 @@ def can_create_campaign(user: sqlite3.Row) -> bool:
     if plan.campaign_limit < 0:
         return True
     return count_campaigns(user["id"]) < plan.campaign_limit
+
+
+# ── app-wide sending account (operator) ──────────────────────────────────────
+
+def get_app_config() -> sqlite3.Row:
+    return get_db().execute("SELECT * FROM app_config WHERE id = 1").fetchone()
+
+
+def save_app_config(smtp_email: str, smtp_password: str) -> None:
+    db = get_db()
+    db.execute(
+        """UPDATE app_config
+              SET smtp_email = ?, smtp_password = ?, updated_at = datetime('now')
+            WHERE id = 1""",
+        (smtp_email.strip(), smtp_password.replace(" ", "").strip()),
+    )
+    db.commit()
+
+
+def sending_configured() -> bool:
+    cfg = get_app_config()
+    return bool(cfg["smtp_email"] and cfg["smtp_password"])

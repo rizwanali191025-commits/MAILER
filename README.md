@@ -114,13 +114,28 @@ Environment variables:
 | Pro | $19 | 5,000 | Unlimited | ✓ | ✓ |
 | Business | $49 | 50,000 | Unlimited | ✓ | ✓ |
 
-### Real Gmail delivery
+### Real Gmail delivery (one shared account)
 
-Sends default to a safe **dry-run/simulate** that still counts toward usage so the
-meter is honest. Real delivery uses the core Gmail sender: multi-tenant deployments
-would add per-user OAuth; for dev/self-host, dropping `config/credentials.json` +
-`config/token.json` in place lets `send` deliver through that mailbox (see
-`saas/sending.py::get_service_for_user`).
+MailPilot sends every customer's real email through **one Gmail account that you,
+the operator, connect** — the model you'd use to rent the mailer out. Setup takes
+about two minutes and needs no Google Cloud project:
+
+1. Sign up — the **first account** to register is the operator/admin (or set
+   `ADMIN_EMAIL` to pin it to a specific email).
+2. Open **Admin → Sending account**.
+3. In your Google account, turn on 2-Step Verification, then create a
+   [Gmail **App Password**](https://myaccount.google.com/apppasswords) (16 chars).
+4. Paste the Gmail address + App Password, **Save**, then **Send test email**.
+
+Once connected, customer sends go out for real via Gmail SMTP
+(`smtp.gmail.com:587`, STARTTLS). Until then, sends safely **simulate** (and still
+count toward usage so the meter stays honest). Gmail allows ~500 emails/day on a
+free account (~2,000/day on Workspace); plan quotas keep customers within that.
+
+> Why App Password instead of Gmail API OAuth? For a single shared sending
+> account it's far simpler and more reliable — no OAuth consent screen, no Google
+> verification, no 7-day token expiry. The message building lives in
+> `saas/sending.py` and can be pointed at the Gmail API instead if you need it.
 
 ### Layout
 

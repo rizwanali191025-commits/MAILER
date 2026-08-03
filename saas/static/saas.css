@@ -192,6 +192,17 @@ textarea { resize: vertical; }
 .send-result.error { border-color: rgba(242,106,106,.4); background: rgba(242,106,106,.08); color: var(--danger); }
 .send-result.busy { color: var(--muted); }
 
+/* admin / connection status */
+.conn-status { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.conn-status .dot { width: 10px; height: 10px; border-radius: 50%; }
+.conn-status.connected .dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(67,217,163,.2); }
+.conn-status.disconnected { color: var(--muted); }
+.conn-status.disconnected .dot { background: var(--muted); }
+.steps { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 8px; color: var(--muted); }
+.steps strong { color: var(--text); }
+.steps li { padding-left: 4px; }
+.send-result .note { color: var(--warn); font-size: .86rem; }
+
 @media (max-width: 860px) {
   .hero, .features, .pricing-grid, .dash-grid, .editor-grid, .faq-grid { grid-template-columns: 1fr; }
   .editor-side { position: static; }

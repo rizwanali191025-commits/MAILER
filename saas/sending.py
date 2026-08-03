@@ -1,16 +1,15 @@
 """Per-campaign send orchestration for the SaaS layer.
 
-Reuses the core engine (:mod:`src.template_engine`, :mod:`src.html_to_ppt`,
-:mod:`src.mailer._build_message`) but drives it from campaign rows stored in
-the database instead of files on disk, and enforces subscription quotas.
+Renders each recipient with the core template engine and sends real email
+through the operator's single shared Gmail account via SMTP (Gmail App
+Password). Enforces subscription quotas before anything is sent.
 
-Two send modes:
-  * ``dry_run=True``  — renders and validates every message without contacting
-    Gmail. Always available; still counts toward monthly usage so the meter is
-    honest during testing.
-  * ``dry_run=False`` — sends through a Gmail service. Real delivery requires a
-    connected Gmail account (see :func:`get_service_for_user`); when none is
-    connected the caller should fall back to dry-run.
+Send modes:
+  * ``dry_run=True``  — renders and validates every message without sending.
+    Always available; still counts toward monthly usage so the meter is honest.
+  * ``dry_run=False`` — sends for real via Gmail SMTP, but only if the operator
+    has connected a sending account (see :mod:`saas.models.get_app_config`).
+    If none is connected, the send safely degrades to a simulate.
 """
 
 from __future__ import annotations
@@ -18,17 +17,29 @@ from __future__ import annotations
 import csv
 import io
 import os
+import smtplib
+import ssl
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from pathlib import Path
 
 from src import template_engine, html_to_ppt
-from src.mailer import _build_message, _send_one
 from src.sender_rotator import SenderRotator
 
+from saas import models
 from saas.plans import get_plan
+
+GMAIL_SMTP_HOST = "smtp.gmail.com"
+GMAIL_SMTP_PORT = 587
 
 
 class QuotaExceeded(Exception):
     """Raised when a send would push the user past their monthly plan limit."""
+
+
+class SendingNotConfigured(Exception):
+    """Raised on a real send when no shared Gmail account is connected."""
 
 
 def parse_recipients(recipients_csv: str) -> list[dict]:
@@ -70,23 +81,62 @@ def render_preview(campaign, user, index: int = 1) -> dict:
     }
 
 
-def get_service_for_user(user):
-    """Return a Gmail API service for real sends, or ``None`` if unavailable.
+# ── message building & SMTP ──────────────────────────────────────────────────
 
-    Real multi-tenant delivery uses per-user OAuth. That flow isn't wired up in
-    this environment, so we optionally fall back to a single shared mailbox when
-    ``config/credentials.json`` + ``token.json`` exist (dev/self-host mode).
-    Returns None otherwise, and the caller degrades to dry-run.
-    """
+def _build_mime(
+    from_email: str,
+    from_name: str,
+    to_email: str,
+    subject: str,
+    html_body: str,
+    attachment_path: str | None = None,
+) -> MIMEMultipart:
+    msg = MIMEMultipart("mixed")
+    msg["From"] = f"{from_name} <{from_email}>"
+    msg["To"] = to_email
+    msg["Subject"] = subject
+
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(html_body, "html", "utf-8"))
+    msg.attach(alt)
+
+    if attachment_path and Path(attachment_path).exists():
+        with open(attachment_path, "rb") as f:
+            data = f.read()
+        part = MIMEApplication(
+            data, "vnd.openxmlformats-officedocument.presentationml.presentation")
+        part.add_header("Content-Disposition", "attachment",
+                        filename=Path(attachment_path).name)
+        msg.attach(part)
+    return msg
+
+
+def open_smtp(smtp_email: str, smtp_password: str) -> smtplib.SMTP:
+    """Open an authenticated Gmail SMTP connection (STARTTLS)."""
+    server = smtplib.SMTP(GMAIL_SMTP_HOST, GMAIL_SMTP_PORT, timeout=30)
+    server.ehlo()
+    server.starttls(context=ssl.create_default_context())
+    server.ehlo()
+    server.login(smtp_email, smtp_password)
+    return server
+
+
+def send_test_email(smtp_email: str, smtp_password: str, to_email: str) -> None:
+    """Send a single verification email. Raises on failure (bad password, etc.)."""
+    msg = _build_mime(
+        smtp_email, "MailPilot", to_email,
+        "MailPilot — your sending account works ✅",
+        "<h2>You're connected!</h2><p>This test confirms MailPilot can send "
+        "email through your Gmail account. You're ready to run campaigns.</p>",
+    )
+    server = open_smtp(smtp_email, smtp_password)
     try:
-        from src.paths import CREDENTIALS_PATH, TOKEN_PATH
-        if not (CREDENTIALS_PATH.exists() and TOKEN_PATH.exists()):
-            return None
-        from src.auth import get_gmail_service
-        return get_gmail_service()
-    except Exception:
-        return None
+        server.send_message(msg)
+    finally:
+        server.quit()
 
+
+# ── campaign send ────────────────────────────────────────────────────────────
 
 def send_campaign(
     campaign,
@@ -114,51 +164,58 @@ def send_campaign(
 
     attach_pptx = bool(campaign["attach_pptx"]) and plan.pptx_attachments
     rotator = SenderRotator(sender_names_for(user, plan))
-    sender_email = user["sender_email"] or "demo@localhost"
 
-    service = None
+    # Real sends go through the operator's shared Gmail account.
+    cfg = models.get_app_config()
+    smtp_email = (cfg["smtp_email"] or "").strip()
+    smtp_password = (cfg["smtp_password"] or "").strip()
+    server = None
     if not dry_run:
-        service = get_service_for_user(user)
-        if service is None:
-            dry_run = True   # no mailbox connected → safe simulate
+        if not (smtp_email and smtp_password):
+            dry_run = True   # nothing connected → safe simulate
+        else:
+            server = open_smtp(smtp_email, smtp_password)
 
     results: list[dict] = []
-    for idx, row in enumerate(valid, start=1):
-        to_email = row["email"]
-        sender_name = rotator.next()
-        data = dict(row)
-        data.setdefault("sender", sender_name)
-        subject = template_engine.render(campaign["subject_tmpl"], data, index=idx)
-        html_body = template_engine.render(campaign["body_tmpl"], data, index=idx)
+    try:
+        for idx, row in enumerate(valid, start=1):
+            to_email = row["email"]
+            sender_name = rotator.next()
+            data = dict(row)
+            data.setdefault("sender", sender_name)
+            subject = template_engine.render(campaign["subject_tmpl"], data, index=idx)
+            html_body = template_engine.render(campaign["body_tmpl"], data, index=idx)
 
-        attachment_path = None
-        if attach_pptx:
+            attachment_path = None
+            if attach_pptx:
+                try:
+                    attachment_path = html_to_ppt.html_to_pptx(html_body)
+                except Exception:
+                    attachment_path = None
+
+            if dry_run:
+                results.append({"to": to_email, "status": "dry_run", "id": ""})
+            else:
+                try:
+                    msg = _build_mime(
+                        smtp_email, sender_name, to_email, subject,
+                        html_body, attachment_path,
+                    )
+                    server.send_message(msg)
+                    results.append({"to": to_email, "status": "sent", "id": ""})
+                except Exception as e:
+                    results.append({"to": to_email, "status": "error", "error": str(e)})
+
+            if attachment_path and Path(attachment_path).exists():
+                try:
+                    os.unlink(attachment_path)
+                except OSError:
+                    pass
+    finally:
+        if server is not None:
             try:
-                attachment_path = html_to_ppt.html_to_pptx(html_body)
+                server.quit()
             except Exception:
-                attachment_path = None
-
-        if dry_run:
-            results.append({"to": to_email, "status": "dry_run", "id": ""})
-        else:
-            try:
-                msg = _build_message(
-                    sender_email=sender_email,
-                    sender_name=sender_name,
-                    to_email=to_email,
-                    subject=subject,
-                    html_body=html_body,
-                    attachment_path=attachment_path,
-                )
-                res = _send_one(service, msg)
-                results.append({"to": to_email, "status": "sent", "id": res.get("id", "")})
-            except Exception as e:
-                results.append({"to": to_email, "status": "error", "error": str(e)})
-
-        if attachment_path and Path(attachment_path).exists():
-            try:
-                os.unlink(attachment_path)
-            except OSError:
                 pass
 
     return results

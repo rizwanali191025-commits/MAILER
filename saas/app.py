@@ -15,7 +15,9 @@ from flask import (
 
 from saas import auth, db, models
 from saas.plans import get_plan, ordered_plans, PLANS
-from saas.sending import QuotaExceeded, render_preview, send_campaign
+from saas.sending import (
+    QuotaExceeded, render_preview, send_campaign, send_test_email,
+)
 
 
 def create_app(database: str | None = None) -> Flask:
@@ -30,7 +32,12 @@ def create_app(database: str | None = None) -> Flask:
     @app.context_processor
     def inject_globals():
         user = auth.current_user()
-        ctx = {"current_user": user, "plans": ordered_plans()}
+        ctx = {
+            "current_user": user,
+            "plans": ordered_plans(),
+            "is_admin": auth.is_admin(user),
+            "sending_configured": models.sending_configured(),
+        }
         if user is not None:
             plan = get_plan(user["plan_id"])
             used = models.sends_this_month(user["id"])
@@ -196,6 +203,12 @@ def create_app(database: str | None = None) -> Flask:
         sent = sum(1 for r in results if r["status"] == "sent")
         simulated = sum(1 for r in results if r["status"] == "dry_run")
         errors = sum(1 for r in results if r["status"] == "error")
+        # A real send that came back fully simulated means no sending account
+        # is connected yet — tell the user so they aren't misled.
+        note = ""
+        if not dry_run and sent == 0 and simulated > 0:
+            note = ("No sending account is connected yet, so this was simulated. "
+                    "The operator must connect a Gmail account to send for real.")
         return jsonify({
             "ok": True,
             "sent": sent,
@@ -203,6 +216,7 @@ def create_app(database: str | None = None) -> Flask:
             "errors": errors,
             "total": len(results),
             "remaining": models.remaining_quota(user),
+            "note": note,
             "results": results[:100],
         })
 
@@ -229,5 +243,49 @@ def create_app(database: str | None = None) -> Flask:
             flash(f"You're now on {plan.name} — ${plan.price_monthly}/mo. "
                   f"(Demo mode: no card charged.)", "success")
         return redirect(url_for("dashboard"))
+
+    # ── admin: shared sending account (operator only) ─────────────────────────
+    @app.route("/admin")
+    @auth.admin_required
+    def admin():
+        cfg = models.get_app_config()
+        return render_template("admin.html", cfg=cfg)
+
+    @app.route("/admin/sending", methods=["POST"])
+    @auth.admin_required
+    def admin_sending():
+        smtp_email = request.form.get("smtp_email", "").strip()
+        smtp_password = request.form.get("smtp_password", "").strip()
+        if not auth.valid_email(smtp_email):
+            flash("Enter a valid Gmail address.", "error")
+        elif len(smtp_password.replace(" ", "")) < 16:
+            flash("That doesn't look like a Gmail App Password (16 characters). "
+                  "Generate one at myaccount.google.com → Security → App passwords.",
+                  "error")
+        else:
+            models.save_app_config(smtp_email, smtp_password)
+            flash("Sending account saved. Send a test email to confirm it works.",
+                  "success")
+        return redirect(url_for("admin"))
+
+    @app.route("/admin/sending/test", methods=["POST"])
+    @auth.admin_required
+    def admin_sending_test():
+        cfg = models.get_app_config()
+        if not (cfg["smtp_email"] and cfg["smtp_password"]):
+            return jsonify({"error": "Save a sending account first."}), 400
+        try:
+            send_test_email(cfg["smtp_email"], cfg["smtp_password"], cfg["smtp_email"])
+        except Exception as e:
+            return jsonify({"error": f"Could not send: {e}"}), 400
+        return jsonify({"ok": True, "to": cfg["smtp_email"]})
+
+    @app.route("/admin/sending/disconnect", methods=["POST"])
+    @auth.admin_required
+    def admin_sending_disconnect():
+        models.save_app_config("", "")
+        flash("Sending account disconnected. Sends will simulate until you reconnect.",
+              "success")
+        return redirect(url_for("admin"))
 
     return app
