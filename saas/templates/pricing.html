@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Pricing — MailPilot{% endblock %}
+{% block content %}
+<section class="wrap page-head">
+  <h1>Simple, honest pricing</h1>
+  <p class="lede">Start free. Upgrade when your list grows. Cancel anytime.</p>
+</section>
+
+<section class="wrap pricing-grid">
+  {% for plan in plans %}
+  <div class="price-card {% if plan.id == 'pro' %}price-featured{% endif %}">
+    {% if plan.id == 'pro' %}<div class="ribbon">Most popular</div>{% endif %}
+    <h3>{{ plan.name }}</h3>
+    <p class="tagline muted">{{ plan.tagline }}</p>
+    <div class="price">
+      {% if plan.is_free %}<span class="amount">Free</span>
+      {% else %}<span class="amount">${{ plan.price_monthly }}</span><span class="per">/mo</span>{% endif %}
+    </div>
+    <ul class="plan-features">
+      {% for f in plan.features %}<li>{{ f }}</li>{% endfor %}
+    </ul>
+    {% if current_user %}
+      {% if user_plan.id == plan.id %}
+        <button class="btn btn-ghost btn-block" disabled>Current plan</button>
+      {% else %}
+        <form method="post" action="{{ url_for('billing_change') }}">
+          <input type="hidden" name="plan_id" value="{{ plan.id }}">
+          <button class="btn {% if plan.id == 'pro' %}btn-primary{% else %}btn-ghost{% endif %} btn-block">
+            {% if plan.price_monthly > user_plan.price_monthly %}Upgrade to {{ plan.name }}
+            {% else %}Switch to {{ plan.name }}{% endif %}
+          </button>
+        </form>
+      {% endif %}
+    {% else %}
+      <a class="btn {% if plan.id == 'pro' %}btn-primary{% else %}btn-ghost{% endif %} btn-block"
+         href="{{ url_for('signup') }}">Start with {{ plan.name }}</a>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+
+<section class="wrap faq">
+  <h2>Questions</h2>
+  <div class="faq-grid">
+    <div><h4>How are sends counted?</h4><p>Each recipient in a send counts as one email against your monthly limit — dry-runs included, so the meter is honest.</p></div>
+    <div><h4>Can I change plans anytime?</h4><p>Yes. Upgrades and downgrades take effect immediately from your Billing page.</p></div>
+    <div><h4>Do you charge a card?</h4><p>This deployment runs in demo mode — plan changes apply instantly with no card. Stripe Checkout drops into the same flow in production.</p></div>
+    <div><h4>Is my data isolated?</h4><p>Every account has its own campaigns, recipients, and templates, scoped by user id at the database layer.</p></div>
+  </div>
+</section>
+{% endblock %}

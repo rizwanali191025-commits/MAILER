@@ -17,6 +17,10 @@ build/
 *.pptx
 !templates/*.pptx
 
+# SaaS database (per-deployment; never commit user data)
+data/saas.db
+*.db
+
 # OS
 .DS_Store
 Thumbs.db

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero wrap">
+  <div class="hero-copy">
+    <span class="eyebrow">Bulk email · without the spray-and-pray</span>
+    <h1>Personalized bulk email<br>that actually feels 1:1.</h1>
+    <p class="lede">
+      Import your list, write one template with <code>{{ '{{tags}}' }}</code>, and MailPilot
+      sends a personalized message to every recipient — rotating sender names,
+      auto-generated PowerPoint attachments, live preview, and honest usage limits.
+    </p>
+    <div class="hero-cta">
+      <a class="btn btn-primary btn-lg" href="{{ url_for('signup') }}">Start free — 100 emails/mo</a>
+      <a class="btn btn-ghost btn-lg" href="{{ url_for('pricing') }}">See pricing</a>
+    </div>
+    <p class="micro muted">No credit card required. Free tier forever.</p>
+  </div>
+  <div class="hero-art">
+    <div class="mock-window">
+      <div class="mock-bar"><span></span><span></span><span></span></div>
+      <pre class="mock-code">Subject: Hi {{ '{{first_name}}' }}, a note from {{ '{{sender}}' }}
+
+&lt;h1&gt;Hello {{ '{{first_name}}' }}!&lt;/h1&gt;
+&lt;p&gt;Thanks for being part of
+   {{ '{{company}}' }}.&lt;/p&gt;</pre>
+      <div class="mock-send">→ 4,812 personalized · 0 duplicates</div>
+    </div>
+  </div>
+</section>
+
+<section class="features wrap">
+  <div class="feature-card">
+    <div class="fi">🏷️</div><h3>Tag personalization</h3>
+    <p>Drop <code>{{ '{{first_name}}' }}</code>, <code>{{ '{{company}}' }}</code>, or any CSV column
+       into your subject and HTML body. Built-in <code>{{ '{{date}}' }}</code> &amp; <code>{{ '{{random_id}}' }}</code> too.</p>
+  </div>
+  <div class="feature-card">
+    <div class="fi">🔁</div><h3>Rotating sender names</h3>
+    <p>Cycle through display names for deliverability testing — the address stays
+       yours, the "From" name varies per email.</p>
+  </div>
+  <div class="feature-card">
+    <div class="fi">📊</div><h3>HTML → PowerPoint</h3>
+    <p>Auto-convert each rendered email into a personalized <code>.pptx</code> deck and attach
+       it. Headings become slides; tables become rows.</p>
+  </div>
+  <div class="feature-card">
+    <div class="fi">👀</div><h3>Preview &amp; dry-run</h3>
+    <p>See exactly how row 12 renders before you send. Dry-run the whole batch to
+       validate — nothing leaves without your say-so.</p>
+  </div>
+  <div class="feature-card">
+    <div class="fi">📈</div><h3>Usage you can trust</h3>
+    <p>A live monthly meter shows sends used vs. your plan limit. Quotas are
+       enforced before a send starts, never mid-batch.</p>
+  </div>
+  <div class="feature-card">
+    <div class="fi">🔒</div><h3>Isolated workspaces</h3>
+    <p>Every account gets its own campaigns, recipients, and templates. Your data
+       is yours — scoped per user, always.</p>
+  </div>
+</section>
+
+<section class="cta-band">
+  <div class="wrap">
+    <h2>Ready to send smarter?</h2>
+    <a class="btn btn-primary btn-lg" href="{{ url_for('signup') }}">Create your free account</a>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Billing — MailPilot{% endblock %}
+{% block content %}
+<section class="wrap dash">
+  <h1>Billing &amp; plan</h1>
+
+  <div class="usage-card">
+    <div class="usage-top">
+      <span>You're on the <strong>{{ user_plan.name }}</strong> plan
+        {% if not user_plan.is_free %}· ${{ user_plan.price_monthly }}/mo{% endif %}</span>
+      <span class="plan-chip plan-{{ user_plan.id }}">{{ user_plan.name }}</span>
+    </div>
+    <div class="meter"><div class="meter-fill" style="width: {{ usage_pct }}%"></div></div>
+    <p class="micro muted">{{ usage_used }} of {{ usage_limit }} emails used this month.</p>
+  </div>
+
+  <p class="muted">This deployment runs in <strong>demo mode</strong> — plan changes apply instantly and no card is charged. In production, upgrades route through Stripe Checkout.</p>
+
+  <div class="pricing-grid">
+    {% for plan in plans %}
+    <div class="price-card {% if plan.id == user_plan.id %}price-featured{% endif %}">
+      {% if plan.id == user_plan.id %}<div class="ribbon">Current</div>{% endif %}
+      <h3>{{ plan.name }}</h3>
+      <div class="price">
+        {% if plan.is_free %}<span class="amount">Free</span>
+        {% else %}<span class="amount">${{ plan.price_monthly }}</span><span class="per">/mo</span>{% endif %}
+      </div>
+      <ul class="plan-features">{% for f in plan.features %}<li>{{ f }}</li>{% endfor %}</ul>
+      {% if plan.id == user_plan.id %}
+        <button class="btn btn-ghost btn-block" disabled>Current plan</button>
+      {% else %}
+        <form method="post" action="{{ url_for('billing_change') }}">
+          <input type="hidden" name="plan_id" value="{{ plan.id }}">
+          <button class="btn {% if plan.price_monthly > user_plan.price_monthly %}btn-primary{% else %}btn-ghost{% endif %} btn-block">
+            {% if plan.price_monthly > user_plan.price_monthly %}Upgrade{% else %}Switch{% endif %} to {{ plan.name }}
+          </button>
+        </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

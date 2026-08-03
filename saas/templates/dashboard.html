@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — MailPilot{% endblock %}
+{% block content %}
+<section class="wrap dash">
+  <div class="dash-head">
+    <div>
+      <h1>Your workspace</h1>
+      <p class="muted">{{ current_user['email'] }}</p>
+    </div>
+    <form method="post" action="{{ url_for('campaign_new') }}">
+      <button class="btn btn-primary" {% if not can_create %}disabled title="Campaign limit reached — upgrade for more"{% endif %}>
+        + New campaign
+      </button>
+    </form>
+  </div>
+
+  <div class="usage-card">
+    <div class="usage-top">
+      <span><strong>{{ usage_used }}</strong> / {{ usage_limit }} emails this month</span>
+      <span class="plan-chip plan-{{ user_plan.id }}">{{ user_plan.name }} plan</span>
+    </div>
+    <div class="meter"><div class="meter-fill" style="width: {{ usage_pct }}%"></div></div>
+    {% if usage_pct >= 80 %}
+      <p class="micro warn">You're at {{ usage_pct }}% of your monthly quota. <a href="{{ url_for('pricing') }}">Upgrade</a> for more headroom.</p>
+    {% endif %}
+  </div>
+
+  <div class="dash-grid">
+    <div class="panel">
+      <h2>Campaigns</h2>
+      {% if campaigns %}
+      <table class="table">
+        <thead><tr><th>Name</th><th>Recipients</th><th>PPTX</th><th>Updated</th><th></th></tr></thead>
+        <tbody>
+          {% for c in campaigns %}
+          <tr>
+            <td><a href="{{ url_for('campaign_edit', campaign_id=c['id']) }}">{{ c['name'] }}</a></td>
+            <td>{{ c['recipients_csv'].strip().splitlines()|length - 1 if c['recipients_csv'].strip() else 0 }}</td>
+            <td>{{ '✓' if c['attach_pptx'] else '—' }}</td>
+            <td class="muted">{{ c['updated_at'][:16] }}</td>
+            <td class="row-actions">
+              <a class="btn btn-ghost btn-sm" href="{{ url_for('campaign_edit', campaign_id=c['id']) }}">Open</a>
+              <form method="post" action="{{ url_for('campaign_delete', campaign_id=c['id']) }}"
+                    onsubmit="return confirm('Delete this campaign?')">
+                <button class="btn btn-danger btn-sm">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">No campaigns yet. Create your first one to start sending.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>Sender settings</h2>
+      <form method="post" action="{{ url_for('settings') }}" class="stack">
+        <label>Sender email
+          <input type="email" name="sender_email" value="{{ current_user['sender_email'] }}"
+                 placeholder="you@gmail.com">
+        </label>
+        <label>Sender display names {% if not user_plan.sender_rotation %}<span class="lock">Pro</span>{% endif %}
+          <input type="text" name="sender_names" value="{{ current_user['sender_names'] }}"
+                 placeholder="Alice from Acme, Bob at Acme">
+          <small class="muted">Comma-separated. {% if user_plan.sender_rotation %}Rotates round-robin.{% else %}Only the first is used on Free.{% endif %}</small>
+        </label>
+        <button class="btn btn-ghost">Save settings</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Recent activity</h2>
+    {% if events %}
+    <table class="table">
+      <thead><tr><th>When</th><th>Campaign</th><th>Recipient</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for e in events %}
+        <tr>
+          <td class="muted">{{ e['created_at'][:16] }}</td>
+          <td>{{ e['campaign_name'] }}</td>
+          <td>{{ e['recipient'] }}</td>
+          <td><span class="status status-{{ e['status'] }}">{{ e['status'].replace('_',' ') }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No sends yet — open a campaign and run a dry-run.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

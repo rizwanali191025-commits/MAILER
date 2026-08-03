@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}{{ campaign['name'] }} — MailPilot{% endblock %}
+{% block content %}
+<section class="wrap editor">
+  <div class="editor-head">
+    <a class="back" href="{{ url_for('dashboard') }}">← Dashboard</a>
+    <div class="editor-actions">
+      <button class="btn btn-ghost" type="button" onclick="doSend(true)">Dry run</button>
+      <button class="btn btn-primary" type="button" onclick="doSend(false)">Send</button>
+    </div>
+  </div>
+
+  <form method="post" id="campaign-form" class="editor-grid">
+    <div class="editor-main">
+      <label class="name-field">
+        <input type="text" name="name" value="{{ campaign['name'] }}" class="name-input" required>
+      </label>
+
+      <label>Subject template
+        <input type="text" name="subject_tmpl" id="subject_tmpl" value="{{ campaign['subject_tmpl'] }}">
+      </label>
+
+      <label>HTML body template
+        <textarea name="body_tmpl" id="body_tmpl" rows="12" spellcheck="false">{{ campaign['body_tmpl'] }}</textarea>
+      </label>
+
+      <label>Recipients (CSV — must include an <code>email</code> column)
+        <textarea name="recipients_csv" id="recipients_csv" rows="8" spellcheck="false" class="mono">{{ campaign['recipients_csv'] }}</textarea>
+      </label>
+
+      <label class="checkbox">
+        <input type="checkbox" name="attach_pptx" {% if campaign['attach_pptx'] %}checked{% endif %}
+               {% if not user_plan.pptx_attachments %}disabled{% endif %}>
+        Attach HTML→PowerPoint deck to each email
+        {% if not user_plan.pptx_attachments %}<span class="lock">Pro</span>{% endif %}
+      </label>
+
+      <div class="editor-save">
+        <button class="btn btn-ghost">Save campaign</button>
+        <span class="muted micro">{{ usage_limit - usage_used }} emails left this month</span>
+      </div>
+    </div>
+
+    <aside class="editor-side">
+      <div class="preview-card">
+        <div class="preview-head">
+          <h3>Live preview</h3>
+          <div class="preview-nav">
+            <button type="button" class="btn btn-sm btn-ghost" onclick="stepPreview(-1)">‹</button>
+            <span>Row <b id="pv-index">1</b><span id="pv-total"></span></span>
+            <button type="button" class="btn btn-sm btn-ghost" onclick="stepPreview(1)">›</button>
+          </div>
+        </div>
+        <div id="pv-error" class="preview-error" hidden></div>
+        <div class="pv-subject"><span class="pv-label">Subject</span><div id="pv-subject"></div></div>
+        <div class="pv-body"><span class="pv-label">Body</span><div id="pv-body" class="pv-render"></div></div>
+        <div class="pv-tags" id="pv-tags"></div>
+      </div>
+      <div id="send-result" class="send-result" hidden></div>
+    </aside>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const cid = {{ campaign['id'] }};
+let pvIndex = 1;
+
+function formData() {
+  const f = document.getElementById('campaign-form');
+  const d = new FormData();
+  d.append('subject_tmpl', f.subject_tmpl.value);
+  d.append('body_tmpl', f.body_tmpl.value);
+  d.append('recipients_csv', f.recipients_csv.value);
+  return d;
+}
+
+async function refreshPreview() {
+  const d = formData();
+  d.append('index', pvIndex);
+  const err = document.getElementById('pv-error');
+  try {
+    const res = await fetch(`/campaigns/${cid}/preview`, { method: 'POST', body: d });
+    const data = await res.json();
+    if (data.error) {
+      err.hidden = false; err.textContent = data.error;
+      document.getElementById('pv-subject').textContent = '';
+      document.getElementById('pv-body').innerHTML = '';
+      document.getElementById('pv-tags').innerHTML = '';
+      return;
+    }
+    err.hidden = true;
+    document.getElementById('pv-subject').textContent = data.subject;
+    document.getElementById('pv-body').innerHTML = data.body;
+    document.getElementById('pv-total').textContent = ' / ' + data.total;
+    document.getElementById('pv-index').textContent = pvIndex;
+    document.getElementById('pv-tags').innerHTML =
+      (data.tags || []).map(t => `<span class="tag">{{'{{'}}${t}{{'}}'}}</span>`).join('');
+  } catch (e) { err.hidden = false; err.textContent = 'Preview failed: ' + e; }
+}
+
+function stepPreview(delta) { pvIndex = Math.max(1, pvIndex + delta); refreshPreview(); }
+
+async function doSend(dry) {
+  const box = document.getElementById('send-result');
+  box.hidden = false;
+  box.className = 'send-result busy';
+  box.textContent = dry ? 'Running dry-run…' : 'Sending…';
+  const d = new FormData();
+  d.append('dry_run', dry ? '1' : '0');
+  try {
+    const res = await fetch(`/campaigns/${cid}/send`, { method: 'POST', body: d });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      box.className = 'send-result error';
+      box.textContent = data.error || 'Send failed.';
+      return;
+    }
+    box.className = 'send-result ok';
+    box.innerHTML = `<strong>${dry ? 'Dry-run complete' : 'Send complete'}</strong><br>` +
+      `${data.sent} sent · ${data.dry_run} simulated · ${data.errors} errors · ` +
+      `${data.remaining} left this month`;
+  } catch (e) {
+    box.className = 'send-result error';
+    box.textContent = 'Request failed: ' + e;
+  }
+}
+
+['subject_tmpl','body_tmpl','recipients_csv'].forEach(id => {
+  document.getElementById(id).addEventListener('input', debounce(refreshPreview, 350));
+});
+function debounce(fn, ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};}
+refreshPreview();
+</script>
+{% endblock %}

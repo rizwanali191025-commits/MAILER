@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Start free — MailPilot{% endblock %}
+{% block content %}
+<section class="wrap auth-wrap">
+  <div class="auth-card">
+    <h1>Create your account</h1>
+    <p class="muted">Free forever · 100 personalized emails every month.</p>
+    <form method="post">
+      <label>Email
+        <input type="email" name="email" required autofocus autocomplete="email">
+      </label>
+      <label>Password
+        <input type="password" name="password" required minlength="8"
+               autocomplete="new-password" placeholder="At least 8 characters">
+      </label>
+      <button class="btn btn-primary btn-block btn-lg">Create free account</button>
+    </form>
+    <p class="auth-alt">Already have an account? <a href="{{ url_for('login') }}">Log in</a></p>
+  </div>
+</section>
+{% endblock %}

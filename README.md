@@ -8,10 +8,84 @@ Send personalised HTML emails in bulk via the Gmail API with:
 
 ---
 
-## Two ways to use it
+## Three ways to use it
 
-- **Web UI** (recommended) — `python app.py` then open http://localhost:5000 in your browser. Edit settings, templates, and recipients in the page, click buttons to preview and send.
+- **MailPilot SaaS** (multi-tenant web app) — `python run_saas.py` then open
+  http://localhost:5001. Sign up, manage isolated campaigns per account, with
+  subscription tiers and usage limits. See [SaaS mode](#mailpilot--saas-mode) below.
+- **Single-user Web UI** — `python app.py` then open http://localhost:5000 in your
+  browser. Edit settings, templates, and recipients in the page, click buttons to
+  preview and send.
 - **Command line** — see the `python main.py …` commands further down.
+
+---
+
+## MailPilot — SaaS mode
+
+`saas/` turns the single-user mailer into a hosted, multi-tenant product built on
+the same core engine (`src/`). It adds user accounts, per-user data isolation,
+subscription tiers with enforced usage quotas, a dashboard, and a marketing site —
+with **no extra dependencies** (stdlib `sqlite3` + Flask/werkzeug).
+
+### Run it
+
+```bash
+pip install -r requirements.txt
+python run_saas.py            # http://localhost:5001
+```
+
+Environment variables:
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `SAAS_SECRET_KEY` | `dev-saas-key-change-me` | Flask session secret — **set this in production** |
+| `SAAS_DATABASE`   | `data/saas.db` | SQLite database path |
+| `PORT`            | `5001` | Port to bind |
+
+### What you get
+
+- **Accounts** — signup / login / logout, passwords hashed with werkzeug, session auth.
+- **Isolated workspaces** — every account's campaigns, recipients, templates, and
+  sender settings are scoped by `user_id` at the database layer.
+- **Campaigns** — create/edit/delete; each stores a subject template, HTML body,
+  recipients CSV, and a PPTX-attachment toggle. Live preview renders any row with
+  `{{tag}}` substitution; dry-run validates the whole batch.
+- **Plans & quotas** — Free / Pro / Business tiers (`saas/plans.py`). Monthly send
+  caps and campaign counts are enforced *before* a send starts; feature gates cover
+  sender-name rotation and PPTX attachments. A live usage meter shows sends used.
+- **Billing** — a self-serve plan-change flow (demo mode: no card charged). The same
+  handler is where Stripe Checkout drops in for production.
+
+### Subscription tiers
+
+| Plan | Price | Emails/mo | Campaigns | Sender rotation | PPTX |
+|------|-------|-----------|-----------|-----------------|------|
+| Free | $0 | 100 | 2 | — | — |
+| Pro | $19 | 5,000 | Unlimited | ✓ | ✓ |
+| Business | $49 | 50,000 | Unlimited | ✓ | ✓ |
+
+### Real Gmail delivery
+
+Sends default to a safe **dry-run/simulate** that still counts toward usage so the
+meter is honest. Real delivery uses the core Gmail sender: multi-tenant deployments
+would add per-user OAuth; for dev/self-host, dropping `config/credentials.json` +
+`config/token.json` in place lets `send` deliver through that mailbox (see
+`saas/sending.py::get_service_for_user`).
+
+### Layout
+
+```
+saas/
+├── app.py         # Flask app factory + all routes
+├── auth.py        # session auth, login_required, current_user
+├── db.py          # sqlite connection + schema bootstrap
+├── models.py      # users / campaigns / send-events data access + quota helpers
+├── plans.py       # tier definitions, prices, limits
+├── sending.py     # per-campaign render + send, quota enforcement
+├── templates/     # landing, pricing, auth, dashboard, editor, billing
+└── static/saas.css
+run_saas.py        # entry point
+```
 
 ## Quick Start
 
