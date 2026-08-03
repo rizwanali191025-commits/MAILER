@@ -1,0 +1,15 @@
+# Run MailPilot with one command:  docker compose up
+# Then open http://localhost:5001
+services:
+  mailpilot:
+    build: .
+    ports:
+      - "5001:5001"
+    environment:
+      # CHANGE THIS to a long random string in production
+      SAAS_SECRET_KEY: "change-me-to-a-long-random-string"
+    volumes:
+      - mailpilot-data:/data      # keeps the database across restarts
+
+volumes:
+  mailpilot-data:

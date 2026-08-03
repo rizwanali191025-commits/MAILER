@@ -27,7 +27,30 @@ the same core engine (`src/`). It adds user accounts, per-user data isolation,
 subscription tiers with enforced usage quotas, a dashboard, and a marketing site —
 with **no extra dependencies** (stdlib `sqlite3` + Flask/werkzeug).
 
-### Run it
+### Easiest way to run (one command)
+
+No Python setup needed — the launcher creates a virtual environment, installs
+dependencies, and starts the server. Then open **http://localhost:5001**.
+
+**macOS / Linux**
+```bash
+./start.sh
+```
+
+**Windows** — double-click `start.bat`, or in a terminal:
+```bat
+start.bat
+```
+
+**Docker** (no Python at all)
+```bash
+docker compose up          # then open http://localhost:5001
+# or:  docker build -t mailpilot . && docker run -p 5001:5001 mailpilot
+```
+
+Change the port with `PORT=8080 ./start.sh` (or `set PORT=8080` before `start.bat`).
+
+### Manual run
 
 ```bash
 pip install -r requirements.txt

@@ -1,0 +1,14 @@
+.git
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+*.egg-info
+build
+dist
+*.db
+data/saas.db
+config/credentials.json
+config/token.json
+.DS_Store
