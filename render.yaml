@@ -1,0 +1,21 @@
+# Render Blueprint — deploys MailPilot as a public web service.
+# How to use (no terminal needed):
+#   1. Push this repo to GitHub (already done on your branch).
+#   2. Go to https://dashboard.render.com  ->  New  ->  Blueprint.
+#   3. Connect this repository and pick the branch.
+#   4. Click Apply. Render builds and gives you a public https URL.
+services:
+  - type: web
+    name: mailpilot
+    runtime: python
+    plan: free
+    branch: claude/saas-product-3lolrf
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn run_saas:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      # A strong session secret is generated for you and kept private.
+      - key: SAAS_SECRET_KEY
+        generateValue: true
+      # Store the SQLite DB on a path that persists for the service's lifetime.
+      - key: SAAS_DATABASE
+        value: /tmp/saas.db

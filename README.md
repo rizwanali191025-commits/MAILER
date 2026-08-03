@@ -57,6 +57,33 @@ pip install -r requirements.txt
 python run_saas.py            # http://localhost:5001
 ```
 
+### Deploy to the web (get a public URL)
+
+`localhost` only works on the machine running the server. To open MailPilot from
+any device — phone, another laptop, share a link — deploy it to a host. The repo
+ships with a production server (gunicorn), a `Procfile`, and a Render blueprint.
+
+**Render (no terminal, free tier)**
+1. Make sure this branch is pushed to GitHub (it is).
+2. Go to **https://dashboard.render.com → New → Blueprint**.
+3. Connect this repository, pick the branch, click **Apply**.
+4. Render builds using `render.yaml` and gives you a public `https://…onrender.com`
+   URL. Open that — it works from anywhere.
+
+`SAAS_SECRET_KEY` is generated automatically; the SQLite DB lives at `/tmp/saas.db`
+(fine for a demo — swap in a managed database + disk for real production data).
+
+**Railway / Heroku-style** — the `Procfile` runs the same command:
+```
+web: gunicorn run_saas:app --bind 0.0.0.0:$PORT
+```
+
+**Any server / VPS** — run it yourself:
+```bash
+pip install -r requirements.txt
+gunicorn run_saas:app --bind 0.0.0.0:8000
+```
+
 Environment variables:
 
 | Var | Default | Purpose |
